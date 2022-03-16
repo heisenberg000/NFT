@@ -7,12 +7,13 @@
 import requests
 import json, time, datetime,random
 from urllib.parse import quote
+import threading
 
 class Starark(object):
-    def __init__(self,cookie,uid=42274):
+    def __init__(self,cookie,uid):
         self.uid= uid
         self.headers = {
-            "user-agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/99.0.4844.51 Mobile Safari/537.36",
+            "user-agent": "Mozilla/5.0 (Linux; Android 6.0; Nexus 5 Build/MRA58N) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/98.0.4758.102 Mobile Safari/537.36",
             "origin": "https://h5.stararknft.art",
             "referer": "https://h5.stararknft.art/",
             "token-no": "aa8c6985a8706a7f335354884135e92c",
@@ -20,115 +21,63 @@ class Starark(object):
             "content-type": "application/x-www-form-urlencoded",
             "cookie": cookie
         }
+        self.urls = {
+            "create_list": {"url":"https://h5.stararknft.art/api/My/create_list","method":"post"},
+            "box_detail": {"url":"https://h5.stararknft.art/api/Box/detailed","method":"post"},
+            "box_buy_order": {"url":"https://h5.stararknft.art/api/Box/box1_other_byorder","method":"post"},
+            "product_detail": {"url":"https://h5.stararknft.art/api/Product/detailed","method":"post"},
+            "product_buy_order": {"url":"","method":"post"},
+            "get_captcha": {"url":"https://h5.stararknft.art/api/VerifyCode/captcha?{ts}","method":"get"},
+            "pay": {"url":"https://h5.stararknft.art/api/Pay/direct_buy_box","method":"post"}
+        }
 
 
-    def get_data(self,url,payload):
-        code = 0
-        resp_dict = {}
-        while code != 200:
+    def get_data(self,url_key,payload):
+        data = {}
+        while True:
             try:
-                response = requests.get(url=url,data=payload,headers=self.headers)
-                if response.status_code == 200:
-                    resp_dict = json.loads(response.text)
-                    code = 200
+                if self.urls[url_key]["method"] == "post":
+                    resp = requests.post(url=self.urls[url_key]["url"], data=payload, headers=self.headers)
+                if self.urls[url_key]["method"] == "get":
+                    resp = requests.get(url=self.urls[url_key]["url"].format(**payload), headers=self.headers)
+                if resp.status_code == 200:
+                    print("(%s)请求返回(%s)：" % (url_key, resp.content))
+                    if self.urls[url_key]["method"] == "get":
+                        data = resp.content
+                    if self.urls[url_key]["method"] == "post":
+                        data = json.loads(resp.text)
+                    break;
             except requests.exceptions.RequestException as e:
                 pass
             except ConnectionError as e:
                 pass
             except ConnectionResetError as e:
                 pass
+            except ConnectionAbortedError as e:
+                pass
             except ConnectionRefusedError as e:
                 pass
-        return resp_dict
+        return data
 
-    def get_phpsessid(self):
-        url = "https://h5.stararknft.art/undefined"
-        resp = requests.get(url, headers=self.headers)
-        print(resp.headers["set-cookie"])
-        if resp.headers["set-cookie"] != "":
-            sessid = resp.headers["set-cookie"].split(";")[0]
-            return sessid
-            # self.cookies.set(sessid[0],sessid[1])
-            # ck_str = ";".join(['%s=%s' % (name, value) for (name, value) in self.cookies.items()])
-            # print("ck_str", ck_str)
-            # self.headers["cookie"] = ck_str
-        return None
-
-
-    def login(self):
-        url = "https://h5.stararknft.art/api/Login/login_password"
-        payload = {
-            "mobile": "16621121712",
-            "password": "heisenberg001"
-        }
-        user = {}
-        data = self.get_data(url=url,payload=payload)
-        if data["code"] == 1 and data["msg"] == "success":
-            user["id"] = data["data"]["id"]
-            user["mobile"] = data["data"]["mobile"]
-            user["ETHaddress"] = data["data"]["ETHaddress"]
-        return user
-
-
-    def create_list(self,author_id,page):
-        url = "https://h5.stararknft.art/api/My/create_list"
-        payload = {
-            "author_id": author_id,
-            "gotosale": "",
-            "name": "",
-            "issue_type": "",
-            "pages": page,
-            "uid": self.uid
-        }
-        nft_list = []
-        data = self.get_data(url,payload)
-        if data["code"] == 1 and data["msg"] == "success":
-            for row in data["data"]["rows"]:
-                nft_list.append({"id":row["id"],"price":row["price"]})
-        return nft_list
-
-    def index(self):
-        url = "https://h5.stararknft.art/api/Product/index"
-        payload = {
-            "pages": 1,
-            "name": "",
-            "issue_type":"",
-            "sellout": "",
-            "typeid": 0,
-            "sort":"",
-            "uid": 43202
-        }
-
-    def detail(self,id):
-        url = "https://h5.stararknft.art/api/Box/detailed"
+    def box_detail(self,id):
         payload = {
             "id": id,
             "uid": self.uid
         }
-        can_buy = False
-        data = self.get_data(url=url,payload=payload)
-        if data["code"] == 1 and data["msg"] == "success":
-            if data["data"]["status"] == 2 or data["data"]["status"] == 1:
-                can_buy = True
-        return can_buy
+        detail = {}
+        data = self.get_data(url_key="box_detail",payload=payload)
+        if data.get("code",0) == 1 and data.get("msg","") == "success":
+            detail["id"] = data["data"]["info"]["id"]
+            detail["price"] = data["data"]["info"]["price"]
+        return detail
 
-    def buy_productorder(self,id):
-        url = "https://h5.stararknft.art/api/Product/other_byorder"
-        payload = {
-            "product_id": id,
-            "pages": 1,
-            "gotosale": 1,
-            "uid": self.uid
-        }
-        product_list = []
-        data = self.get_data(url=url, payload=payload)
-        if data.get("code", 0) == 1 and data.get("msg", "") == "success":
-            for row in data["data"]["rows"]:
-                product_list.append(row["token_id"])
-        return product_list
+    def get_captcha(self):
+        payload = {"ts":int(round(time.time() * 1000))}
+        bdata = self.get_data("get_captcha",payload=payload)
+        with open(str(payload["ts"]) + ".PNG","wb") as f:
+            f.write(bdata)
 
-    def buy_boxorder(self,id,page):
-        url = "https://h5.stararknft.art/api/Box/box1_other_byorder"
+    def box_buy_order(self,id,page):
         payload = {
             "product_id": id,
             "pages": page,
@@ -136,86 +85,101 @@ class Starark(object):
             "sort": 1,
             "uid": self.uid
         }
-        box_list = []
-        data = self.get_data(url=url,payload=payload)
+        valid_token_list = []
+        data = self.get_data(url_key="box_buy_order",payload=payload)
         if data.get("code", 0) == 1 and data.get("msg", "") == "success":
             for row in data["data"]["rows"]:
-                box_list.append(row["token_id"])
-        return box_list
-
-
+                valid_token_list.append(row["token_id"])
+        return valid_token_list
 
     def pay(self,token_id, price):
-        url = "https://h5.stararknft.art/api/Pay/direct_buy_box"
         payload = {
             "token_id": token_id,
             "password": 111111,
             "money": price,
             "uid": self.uid
         }
-        pay_flag = False
-        while not pay_flag:
-            data = self.get_data(url=url,payload=payload)
-            if data.get("code", 0) == 0 and data.get("msg", "").find("UID已熔断") != -1:
-                time.sleep(1)
-            if (data.get("code",0) == 0 and data.get("msg","").find("手速慢了") != -1) or (data.get("code", 0) == 1):
-                pay_flag = True
-        return pay_flag
+        while True:
+            data = self.get_data(url_key="pay",payload=payload)
+            if data.get("code",0) == 0 and data.get("msg","").find("UID已熔断") != -1:
+                print("购买失败：%s" % (data.get("msg",""),))
+                # time.sleep(3)
+            if data.get("code",0) == 0 and data.get("msg","").find("手速慢了") != -1:
+                print("购买失败：%s" % (data.get("msg",""),))
+                break;
+            if data.get("code",0) == 1:
+                print("购买成功：%d" % (token_id,))
+                # time.sleep(3)
+                break;
+        return token_id
 
+
+def do(starark,valid_token_list,price,id):
+    start_time = datetime.datetime.strptime('2022-03-16 15:00:00', '%Y-%m-%d %H:%M:%S')
+    while True:
+        if start_time < datetime.datetime.now():
+            while len(valid_token_list) > 0:
+                token_id = random.choice(valid_token_list)
+                print("随机选择了可购买id：%d" % (token_id,))
+                del_token_id = starark.pay(token_id=token_id, price=price)
+                if token_id == del_token_id:
+                    valid_token_list.remove(token_id)
+            valid_token_list = starark.box_buy_order(id=id)
+            print("新的可购买id列表：", valid_token_list)
+
+# def mutilthread():
+#     threads = []
+#     t1 = threading.Thread(target=do,args=(starark,valid_token_list,price,id))
+#     threads.append(t1)
+#     t2 = threading.Thread(target=do, args=(starark, valid_token_list, price, id))
+#     threads.append(t2)
+#
+#     for t in threads:
+#         t.setDaemon(True)
+#         t.start()
+#
+#     for t in threads:
+#         t.join()
 
 def main():
     # 初始化
-    # product : 1,box : 0
-    type = 1
-    starark = Starark("user={%22id%22:43202%2C%22mobile%22:%2215316693779%22%2C%22nickname%22:%22fxxkyou%22%2C%22img%22:%22/static/img/demo.png%22%2C%22backimg%22:%22/static/img/demo.png%22%2C%22content%22:%22%22%2C%22ETHaddress%22:%220xbd7363501587f2a223d38fb0f529d129f121941b%22}; PHPSESSID=ab85a45ae54f1d3c957d4061387e1f5d",43202)
-    # 先登录获取uid
-    # user = starark.login()
-    # print("user:", user)
-    # # 获取PHPSESSID
-    # starark.set_cookie()
-    # print(starark.headers)
-    # print(starark.cookies)
-    # 获取nft信息
-    # 获取作者第一页列表
-    nft_list = starark.create_list(author_id=5174)
-    # 获取所有可购买物品
-    if len(nft_list) > 0:
-        for nft in nft_list:
-            if starark.detail(id=nft["id"]):
-                nft["token_list"] = []
-                # 提前获取所有可购买nft的可购买token_id，取1-50页数据
-                for i in range(1,51,1):
-                    if type == 0:
-                        info = starark.buy_boxorder(id=id,page=i)
-                    else:
-                        info = starark.buy_productorder(id=id,page=i)
-                    nft["token_list"].extend(info)
-            else:
-                nft_list.remove(nft)
-    print("可购买的nft—id列表:", nft_list)
-
-    start_time = datetime.datetime.strptime('2022-03-10 18:00:00', '%Y-%m-%d %H:%M:%S')
+    # boxtype = input("请输入类型：1.盲盒 2.非盲盒")
+    # boxtype = int(boxtype)
+    page = input("请输入要获取的可用token页数：")
+    base_info = {
+        "author_id": 10839,
+        "id": 11116
+    }
+    starark = Starark(
+        "PHPSESSID=7c5038dad05ba8986987ee26049a7dec; user={%22id%22:43202%2C%22mobile%22:%2215316693779%22%2C%22nickname%22:%22fxxkyou%22%2C%22img%22:%22/static/img/demo.png%22%2C%22backimg%22:%22/static/img/demo.png%22%2C%22content%22:%22%22%2C%22ETHaddress%22:%220xbd7363501587f2a223d38fb0f529d129f121941b%22%2C%22is_read_privacy_protocol%22:1}",
+        43202)
+    # 获取详情
+    box_detail = starark.box_detail(id=base_info["id"])
+    print("抢购基本信息：", box_detail)
+    # 获取可用token，现获取500个
+    valid_token_list = []
+    for p in range(1,int(page)):
+        valid_token_list.extend(starark.box_buy_order(id=base_info["id"],page=p))
+    # 提前获取一次
+    print("提前获取可购买编号：", valid_token_list)
+    start_time = datetime.datetime.strptime('2022-03-16 15:00:00', '%Y-%m-%d %H:%M:%S')
     while True:
         if start_time < datetime.datetime.now():
-            # 获取当前随机到的nft值
-            # by_info = starark.byorder(id=ntf_info["id"])
-            while True:
-                if len(nft_list) > 1:
-                    nft = random.choice(nft_list)
-                else:
-                    nft = nft_list[0]
-                tid = random.choice(nft["token_list"])
-                if starark.pay(token_id=tid,price=nft["price"]):
-                    if tid in nft["token_list"]:
-                        print("删除货号id=%d下的无效token_id=%d",(nft["id"],tid))
-                        nft["token_list"].remove(tid)
-                    else:
-                        if type == 0:
-                            token_list = starark.buy_boxorder(id=nft["id"])
-                        else:
-                            token_list = starark.buy_productorder(id=nft["id"])
-                        print("获取新的可购买编号token列表", token_list)
-                        nft["token_list"] = token_list
+            while len(valid_token_list) > 0:
+                token_id = random.choice(valid_token_list)
+                print("随机选择了可购买id：%d" % (token_id,))
+                del_token_id = starark.pay(token_id=token_id, price=box_detail["price"])
+                if token_id == del_token_id:
+                    valid_token_list.remove(token_id)
+            valid_token_list = starark.box_buy_order(id=base_info["id"])
+            print("新的可购买id列表：", valid_token_list)
+
+def atest():
+    starark = Starark(
+        "PHPSESSID=7c5038dad05ba8986987ee26049a7dec; user={%22id%22:43202%2C%22mobile%22:%2215316693779%22%2C%22nickname%22:%22fxxkyou%22%2C%22img%22:%22/static/img/demo.png%22%2C%22backimg%22:%22/static/img/demo.png%22%2C%22content%22:%22%22%2C%22ETHaddress%22:%220xbd7363501587f2a223d38fb0f529d129f121941b%22%2C%22is_read_privacy_protocol%22:1}",
+        43202)
+    starark.get_captcha()
 
 if __name__ == '__main__':
-    main()
+    # main()
+    atest()
